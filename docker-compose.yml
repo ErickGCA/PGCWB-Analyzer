@@ -1,0 +1,118 @@
+services:
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: pgcwb
+      POSTGRES_PASSWORD: pgcwb
+      POSTGRES_DB: pgcwb_analyzer
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgcwb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  airflow-webserver:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://pgcwb:pgcwb@postgres/pgcwb_analyzer
+      - AIRFLOW__CORE__FERNET_KEY=cxPDG1LsPxPwh8zDFL-nEozTsxWc51Yy6IClnqNjpco=
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - AIRFLOW__WEBSERVER__SECRET_KEY=bbfb171e15cfa78f72f04e6b7131537373b565696519dc38866a0c2486c5c1da
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=postgres 
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - ORIGIN_LAT=${ORIGIN_LAT}
+      - ORIGIN_LNG=${ORIGIN_LNG}
+      - DESTINATION_LAT=${DESTINATION_LAT}
+      - DESTINATION_LNG=${DESTINATION_LNG}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./src:/opt/airflow/src
+    ports:
+      - "8080:8080"
+    command: webserver
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  airflow-scheduler:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    depends_on:
+      - airflow-webserver 
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://pgcwb:pgcwb@postgres/pgcwb_analyzer
+      - AIRFLOW__CORE__FERNET_KEY=cxPDG1LsPxPwh8zDFL-nEozTsxWc51Yy6IClnqNjpco=
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - AIRFLOW__WEBSERVER__SECRET_KEY=bbfb171e15cfa78f72f04e6b7131537373b565696519dc38866a0c2486c5c1da
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - ORIGIN_LAT=${ORIGIN_LAT}
+      - ORIGIN_LNG=${ORIGIN_LNG}
+      - DESTINATION_LAT=${DESTINATION_LAT}
+      - DESTINATION_LNG=${DESTINATION_LNG}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./src:/opt/airflow/src
+    command: scheduler
+
+  metabase:
+    image: metabase/metabase:latest
+    ports:
+      - "3000:3000"
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: metabase
+      MB_DB_PORT: 5432
+      MB_DB_USER: pgcwb
+      MB_DB_PASS: pgcwb
+      MB_DB_HOST: postgres
+    depends_on:
+      - postgres
+
+volumes:
+  minio_data:
+  postgres_data: 
